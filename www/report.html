@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Report Incident - Citizens Reporting App</title>
+    <link rel="stylesheet" href="css/index.css">
+</head>
+<body>
+    <div class="container">
+        <h2>Report New Incident</h2>
+        <input type="text" id="incident-title" placeholder="Incident Title">
+        <textarea id="incident-description" placeholder="Describe the incident..."></textarea>
+        <select id="incident-category">
+            <option value="Accident">Accident</option>
+            <option value="Fighting">Fighting</option>
+            <option value="Rioting">Rioting</option>
+        </select>
+        <input type="text" id="incident-latitude" placeholder="Latitude" readonly>
+        <input type="text" id="incident-longitude" placeholder="Longitude" readonly>
+        <input type="file" id="incident-image">
+        <button onclick="getCurrentLocation()">Get Current Location</button>
+        <button onclick="submitIncident()">Submit Incident</button>
+        <button onclick="window.location.href='home.html'">Back to Home</button>
+    </div>
+
+    <script src="cordova.js"></script>
+    <script src="js/index.js"></script>
+</body>
+</html>
