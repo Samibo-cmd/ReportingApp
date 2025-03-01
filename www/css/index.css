@@ -4,12 +4,6 @@ body {
     padding: 20px 0;
 }
 
-.container {
-    max-height: 90vh;
-    overflow-y: auto;
-    margin: 20px auto;
-}
-
 #map {
     height: 300px;
     width: 100%;
@@ -33,15 +27,7 @@ body {
     display: none;
 }
   
-  .container {
-    background: white;
-    padding: 40px;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    text-align: center;
-    width: 90%;
-    max-width: 400px;
-  }
+
   
   h2 {
     margin-bottom: 20px;
