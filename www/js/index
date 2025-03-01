@@ -1,0 +1,1678 @@
+// Citizens Reporting Solution App - Cordova + Firebase
+
+const JSONBIN_URL = "https://api.jsonbin.io/v3/b/67bf3079acd3cb34a8f14391";
+const JSONBIN_SECRET = "$2a$10$k7xDAR2DmKSfqw8qgv2Kk.5WISBmpgY6av5nZg7FyLhMmY3yh.Vrq";
+
+// Remove these variable declarations from the global scope
+// let db, storage, auth;
+// Add this at the start of your file, after the constants
+// Remove or modify the DOMContentLoaded listener
+// document.addEventListener('DOMContentLoaded', function() {
+//     if (!firebase.apps.length) {
+//         console.log("Waiting for Firebase initialization...");
+//     }
+// });
+
+// Update the deviceready listener
+document.addEventListener('deviceready', function() {
+    console.log("Initializing Firebase...");
+    
+    const firebaseConfig = {
+        apiKey: "AIzaSyBKWE8ZJX0YlGYjGEHyV_EI_vvxZDG_ByM",
+        authDomain: "citizen-reporting-app.firebaseapp.com",
+        projectId: "citizen-reporting-app",
+        storageBucket: "citizen-reporting-app.appspot.com",
+        messagingSenderId: "654321098765",
+        appId: "1:654321098765:web:abc123def456ghi789jkl"
+    };
+    
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        window.db = firebase.firestore();
+        window.storage = firebase.storage();
+        window.auth = firebase.auth();
+        console.log("Firebase initialized successfully");
+        
+        // Add this check after initialization
+        window.auth.onAuthStateChanged(user => {
+            console.log("Auth state changed:", user ? "User logged in" : "User not logged in");
+            if (user) {
+                if (window.location.pathname.includes("login.html") || window.location.pathname.includes("register.html")) {
+                    window.location.href = "home.html";
+                }
+            } else {
+                if (window.location.pathname.includes("home.html") || window.location.pathname.includes("report.html")) {
+                    window.location.href = "index.html";
+                }
+            }
+        });
+        // Call fetchIncidents if we're on the home page
+        if (window.location.pathname.includes('home.html')) {
+            fetchIncidents();
+        }
+    } catch (error) {
+        console.error("Firebase initialization error:", error);
+    }
+}); // End of deviceready event listener
+// Remove this duplicate auth.onAuthStateChanged listener (around line 52)
+// auth.onAuthStateChanged(user => {
+//   if (user) {
+//       if (window.location.pathname.includes("index.html") || window.location.pathname.includes("register.html")) {
+//           window.location.href = "home.html";
+//       }
+//   } else {
+//       if (window.location.pathname.includes("home.html") || window.location.pathname.includes("report.html")) {
+//           window.location.href = "index.html";
+//       }
+//   }
+// });
+// Update all auth references to use window.auth
+function registerUser() {
+    const email = document.getElementById("register-email").value;
+    const password = document.getElementById("register-password").value;
+    window.auth.createUserWithEmailAndPassword(email, password)
+        .then(() => {
+            window.location.href = "home.html";
+        })
+        .catch(error => console.error("Error registering user: ", error));
+}
+
+// Update the loginUser function
+function loginUser() {
+    if (!window.auth) {
+        console.error("Auth not initialized");
+        alert("Please wait for system initialization");
+        return;
+    }
+
+    const email = document.getElementById("login-email").value;
+    const password = document.getElementById("login-password").value;
+    
+    window.auth.signInWithEmailAndPassword(email, password)
+        .then(() => {
+            window.location.href = "home.html";
+        })
+        .catch(error => {
+            console.error("Error logging in: ", error);
+            alert("Login failed: " + error.message);
+        });
+}
+
+// Update the logoutUser function
+function logoutUser() {
+    if (!window.auth) {
+        console.error("Auth not initialized");
+        window.location.href = "index.html";
+        return;
+    }
+    
+    window.auth.signOut()
+        .then(() => {
+            window.location.href = "index.html";
+        })
+        .catch(error => {
+            console.error("Error logging out: ", error);
+            window.location.href = "index.html";
+        });
+}
+// Get Current Location using Cordova Geolocation Plugin
+function getCurrentLocation() {
+    navigator.geolocation.getCurrentPosition(
+        position => {
+            document.getElementById("incident-latitude").value = position.coords.latitude;
+            document.getElementById("incident-longitude").value = position.coords.longitude;
+        },
+        error => {
+            console.error("Error getting location: ", error);
+        },
+        { enableHighAccuracy: true }
+    );
+}
+
+// Submit Incident
+function submitIncident() {
+    const title = document.getElementById("incident-title").value;
+    const description = document.getElementById("incident-description").value;
+    const category = document.getElementById("incident-category").value;
+    const latitude = document.getElementById("incident-latitude").value;
+    const longitude = document.getElementById("incident-longitude").value;
+    const imageFile = document.getElementById("incident-image").files[0];
+    
+    const user = window.auth.currentUser;
+    if (!user) {
+        alert("Please log in to submit an incident.");
+        return;
+    }
+    
+    if (!title || !description || !category || !latitude || !longitude || !imageFile) {
+        alert("Please fill in all fields and upload an image.");
+        return;
+    }
+
+    const incidentRef = db.collection("incidents").doc();
+    
+    let uploadTask = storage.ref(`images/${incidentRef.id}`).put(imageFile);
+    uploadTask.then(snapshot => snapshot.ref.getDownloadURL())
+        .then(imageURL => {
+            const incidentData = {
+                userId: user.uid,
+                title,
+                description,
+                category,
+                latitude,
+                longitude,
+                imageURL,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                id: incidentRef.id
+            };
+    
+            // Save to both Firebase and JSONbin
+            return Promise.all([
+                // Save to Firebase
+                incidentRef.set(incidentData),
+                // Update JSONbin
+                fetch(JSONBIN_URL, {
+                    method: 'GET',
+                    headers: {
+                        'X-Master-Key': JSONBIN_SECRET
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to fetch from JSONbin');
+                    return response.json();
+                })
+                .then(data => {
+                    const incidents = Array.isArray(data.record) ? data.record : [];
+                    const jsonbinIncident = {
+                        ...incidentData,
+                        timestamp: new Date().toISOString()
+                    };
+                    incidents.push(jsonbinIncident);
+                    
+                    return fetch(JSONBIN_URL, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Master-Key': JSONBIN_SECRET
+                        },
+                        body: JSON.stringify(incidents)
+                    });
+                })
+            ]);
+        })
+        .then(() => {
+            alert("Incident submitted successfully!");
+            window.location.href = "home.html";
+        })
+        .catch(error => {
+            console.error("Error adding incident: ", error);
+            alert("Failed to submit incident. Please try again.");
+        });
+}
+
+// Fetch Incidents
+function fetchIncidents() {
+    // Fetch from Firebase
+    window.db.collection("incidents").orderBy("timestamp", "desc").onSnapshot(snapshot => {
+        let firebaseIncidents = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            firebaseIncidents.push({
+                ...data,
+                id: doc.id,
+                timestamp: data.timestamp ? data.timestamp.toDate() : new Date()
+            });
+        });
+        
+        // Fetch from JSONbin
+        fetch(JSONBIN_URL, {
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_SECRET
+            }
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch from JSONbin');
+            return response.json();
+        })
+        .then(data => {
+            const jsonbinIncidents = Array.isArray(data.record) ? data.record : [];
+            // Sort JSONbin incidents by timestamp
+            jsonbinIncidents.sort((a, b) => 
+                new Date(b.timestamp) - new Date(a.timestamp)
+            );
+            displayIncidents(firebaseIncidents, jsonbinIncidents);
+        })
+        .catch(error => {
+            console.error("Error fetching JSONbin data: ", error);
+            // Still display Firebase incidents if JSONbin fails
+            displayIncidents(firebaseIncidents, []);
+        });
+    }, error => {
+        console.error("Error fetching Firebase data: ", error);
+        // Try to fetch from JSONbin as fallback
+        fetch(JSONBIN_URL, {
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_SECRET
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            const jsonbinIncidents = Array.isArray(data.record) ? data.record : [];
+            displayIncidents([], jsonbinIncidents);
+        })
+        .catch(error => {
+            console.error("Error fetching JSONbin data: ", error);
+            displayIncidents([], []);
+        });
+    });
+}
+
+// Display Incidents
+function displayIncidents(firebaseIncidents, jsonbinIncidents) {
+    const incidentList = document.getElementById("incident-list");
+    if (!incidentList) return;
+    
+    incidentList.innerHTML = "";
+
+    // Display Firebase incidents
+    firebaseIncidents.forEach(incident => {
+        let div = document.createElement("div");
+        div.innerHTML = `
+            <h3>${incident.title}</h3>
+            <p>${incident.description}</p>
+            <p>Category: ${incident.category}</p>
+            <img src="${incident.imageURL}" width="200" />
+            <p>Location: ${incident.latitude}, ${incident.longitude}</p>
+        `;
+        incidentList.appendChild(div);
+    });
+
+    // Display JSONbin incidents
+    const jsonbinSection = document.createElement("div");
+    jsonbinSection.innerHTML = "<h2>Historical Incidents from JSONbin</h2>";
+    jsonbinIncidents.forEach(incident => {
+        let div = document.createElement("div");
+        div.innerHTML = `
+            <h3>${incident.title}</h3>
+            <p>${incident.description}</p>
+            <p>Category: ${incident.category}</p>
+            <img src="${incident.imageURL}" width="200" />
+            <p>Location: ${incident.latitude}, ${incident.longitude}</p>
+        `;
+        jsonbinSection.appendChild(div);
+    });
+    incidentList.appendChild(jsonbinSection);
+}
+
+// Cordova Device Ready
+document.addEventListener("deviceready", function () {
+    fetchIncidents();
+    getCurrentLocation();
+}, false);
+
+function displayIncidents(incidents) {
+    const incidentList = document.getElementById('incident-list');
+    incidentList.innerHTML = ''; // Clear existing content
+
+    incidents.forEach(incident => {
+        const date = new Date(incident.timestamp).toLocaleDateString();
+        const time = new Date(incident.timestamp).toLocaleTimeString();
+        
+        const incidentCard = `
+            <div class="incident-card">
+                <div class="incident-title">${incident.title}</div>
+                <div class="incident-details">
+                    <p>${incident.description}</p>
+                    <span class="incident-category">${incident.category}</span>
+                    <p>Reported on: ${date} at ${time}</p>
+                </div>
+            </div>
+        `;
+        incidentList.innerHTML += incidentCard;
+    });
+}
+// Remove this line from the bottom of the file
+// console.log("Initial Auth status:", window.auth.currentUser ? "User logged in" : "User not logged in");
+// Add this function
+function checkAuthStatus() {
+    if (window.auth) {
+        console.log("Initial Auth status:", window.auth.currentUser ? "User logged in" : "User not logged in");
+    } else {
+        console.log("Auth not initialized yet");
+    }
+}
+// Update the deviceready listener to include the auth check
+document.addEventListener('deviceready', function() {
+    console.log("Initializing Firebase...");
+    
+    const firebaseConfig = {
+        apiKey: "AIzaSyBKWE8ZJX0YlGYjGEHyV_EI_vvxZDG_ByM",
+        authDomain: "citizen-reporting-app.firebaseapp.com",
+        projectId: "citizen-reporting-app",
+        storageBucket: "citizen-reporting-app.appspot.com",
+        messagingSenderId: "654321098765",
+        appId: "1:654321098765:web:abc123def456ghi789jkl"
+    };
+    
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        window.db = firebase.firestore();
+        window.storage = firebase.storage();
+        window.auth = firebase.auth();
+        console.log("Firebase initialized successfully");
+        
+        // Add the auth status check here
+        checkAuthStatus();
+        
+        // Rest of your existing code...
+        window.auth.onAuthStateChanged(user => {
+            console.log("Auth state changed:", user ? "User logged in" : "User not logged in");
+            if (user) {
+                if (window.location.pathname.includes("login.html") || window.location.pathname.includes("register.html")) {
+                    window.location.href = "home.html";
+                }
+            } else {
+                if (window.location.pathname.includes("home.html") || window.location.pathname.includes("report.html")) {
+                    window.location.href = "index.html";
+                }
+            }
+        });
+        // Call fetchIncidents if we're on the home page
+        if (window.location.pathname.includes('home.html')) {
+            fetchIncidents();
+        }
+    } catch (error) {
+        console.error("Firebase initialization error:", error);
+    }
+}); // End of deviceready event listener
+// Remove this duplicate auth.onAuthStateChanged listener (around line 52)
+// auth.onAuthStateChanged(user => {
+//   if (user) {
+//       if (window.location.pathname.includes("index.html") || window.location.pathname.includes("register.html")) {
+//           window.location.href = "home.html";
+//       }
+//   } else {
+//       if (window.location.pathname.includes("home.html") || window.location.pathname.includes("report.html")) {
+//           window.location.href = "index.html";
+//       }
+//   }
+// });
+// Update all auth references to use window.auth
+function registerUser() {
+    const email = document.getElementById("register-email").value;
+    const password = document.getElementById("register-password").value;
+    window.auth.createUserWithEmailAndPassword(email, password)
+        .then(() => {
+            window.location.href = "home.html";
+        })
+        .catch(error => console.error("Error registering user: ", error));
+}
+
+// Update the loginUser function
+function loginUser() {
+    if (!window.auth) {
+        console.error("Auth not initialized");
+        alert("Please wait for system initialization");
+        return;
+    }
+
+    const email = document.getElementById("login-email").value;
+    const password = document.getElementById("login-password").value;
+    
+    window.auth.signInWithEmailAndPassword(email, password)
+        .then(() => {
+            window.location.href = "home.html";
+        })
+        .catch(error => {
+            console.error("Error logging in: ", error);
+            alert("Login failed: " + error.message);
+        });
+}
+
+// Update the logoutUser function
+function logoutUser() {
+    if (!window.auth) {
+        console.error("Auth not initialized");
+        window.location.href = "index.html";
+        return;
+    }
+    
+    window.auth.signOut()
+        .then(() => {
+            window.location.href = "index.html";
+        })
+        .catch(error => {
+            console.error("Error logging out: ", error);
+            window.location.href = "index.html";
+        });
+}
+// Get Current Location using Cordova Geolocation Plugin
+function getCurrentLocation() {
+    navigator.geolocation.getCurrentPosition(
+        position => {
+            document.getElementById("incident-latitude").value = position.coords.latitude;
+            document.getElementById("incident-longitude").value = position.coords.longitude;
+        },
+        error => {
+            console.error("Error getting location: ", error);
+        },
+        { enableHighAccuracy: true }
+    );
+}
+
+// Submit Incident
+function submitIncident() {
+    const title = document.getElementById("incident-title").value;
+    const description = document.getElementById("incident-description").value;
+    const category = document.getElementById("incident-category").value;
+    const latitude = document.getElementById("incident-latitude").value;
+    const longitude = document.getElementById("incident-longitude").value;
+    const imageFile = document.getElementById("incident-image").files[0];
+    
+    const user = window.auth.currentUser;
+    if (!user) {
+        alert("Please log in to submit an incident.");
+        return;
+    }
+    
+    if (!title || !description || !category || !latitude || !longitude || !imageFile) {
+        alert("Please fill in all fields and upload an image.");
+        return;
+    }
+
+    const incidentRef = db.collection("incidents").doc();
+    
+    let uploadTask = storage.ref(`images/${incidentRef.id}`).put(imageFile);
+    uploadTask.then(snapshot => snapshot.ref.getDownloadURL())
+        .then(imageURL => {
+            const incidentData = {
+                userId: user.uid,
+                title,
+                description,
+                category,
+                latitude,
+                longitude,
+                imageURL,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                id: incidentRef.id
+            };
+    
+            // Save to both Firebase and JSONbin
+            return Promise.all([
+                // Save to Firebase
+                incidentRef.set(incidentData),
+                // Update JSONbin
+                fetch(JSONBIN_URL, {
+                    method: 'GET',
+                    headers: {
+                        'X-Master-Key': JSONBIN_SECRET
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to fetch from JSONbin');
+                    return response.json();
+                })
+                .then(data => {
+                    const incidents = Array.isArray(data.record) ? data.record : [];
+                    const jsonbinIncident = {
+                        ...incidentData,
+                        timestamp: new Date().toISOString()
+                    };
+                    incidents.push(jsonbinIncident);
+                    
+                    return fetch(JSONBIN_URL, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Master-Key': JSONBIN_SECRET
+                        },
+                        body: JSON.stringify(incidents)
+                    });
+                })
+            ]);
+        })
+        .then(() => {
+            alert("Incident submitted successfully!");
+            window.location.href = "home.html";
+        })
+        .catch(error => {
+            console.error("Error adding incident: ", error);
+            alert("Failed to submit incident. Please try again.");
+        });
+}
+
+// Fetch Incidents
+function fetchIncidents() {
+    // Fetch from Firebase
+    window.db.collection("incidents").orderBy("timestamp", "desc").onSnapshot(snapshot => {
+        let firebaseIncidents = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            firebaseIncidents.push({
+                ...data,
+                id: doc.id,
+                timestamp: data.timestamp ? data.timestamp.toDate() : new Date()
+            });
+        });
+        
+        // Fetch from JSONbin
+        fetch(JSONBIN_URL, {
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_SECRET
+            }
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch from JSONbin');
+            return response.json();
+        })
+        .then(data => {
+            const jsonbinIncidents = Array.isArray(data.record) ? data.record : [];
+            // Sort JSONbin incidents by timestamp
+            jsonbinIncidents.sort((a, b) => 
+                new Date(b.timestamp) - new Date(a.timestamp)
+            );
+            displayIncidents(firebaseIncidents, jsonbinIncidents);
+        })
+        .catch(error => {
+            console.error("Error fetching JSONbin data: ", error);
+            // Still display Firebase incidents if JSONbin fails
+            displayIncidents(firebaseIncidents, []);
+        });
+    }, error => {
+        console.error("Error fetching Firebase data: ", error);
+        // Try to fetch from JSONbin as fallback
+        fetch(JSONBIN_URL, {
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_SECRET
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            const jsonbinIncidents = Array.isArray(data.record) ? data.record : [];
+            displayIncidents([], jsonbinIncidents);
+        })
+        .catch(error => {
+            console.error("Error fetching JSONbin data: ", error);
+            displayIncidents([], []);
+        });
+    });
+}
+
+// Display Incidents
+function displayIncidents(firebaseIncidents, jsonbinIncidents) {
+    const incidentList = document.getElementById("incident-list");
+    if (!incidentList) return;
+    
+    incidentList.innerHTML = "";
+
+    // Display Firebase incidents
+    firebaseIncidents.forEach(incident => {
+        let div = document.createElement("div");
+        div.innerHTML = `
+            <h3>${incident.title}</h3>
+            <p>${incident.description}</p>
+            <p>Category: ${incident.category}</p>
+            <img src="${incident.imageURL}" width="200" />
+            <p>Location: ${incident.latitude}, ${incident.longitude}</p>
+        `;
+        incidentList.appendChild(div);
+    });
+
+    // Display JSONbin incidents
+    const jsonbinSection = document.createElement("div");
+    jsonbinSection.innerHTML = "<h2>Historical Incidents from JSONbin</h2>";
+    jsonbinIncidents.forEach(incident => {
+        let div = document.createElement("div");
+        div.innerHTML = `
+            <h3>${incident.title}</h3>
+            <p>${incident.description}</p>
+            <p>Category: ${incident.category}</p>
+            <img src="${incident.imageURL}" width="200" />
+            <p>Location: ${incident.latitude}, ${incident.longitude}</p>
+        `;
+        jsonbinSection.appendChild(div);
+    });
+    incidentList.appendChild(jsonbinSection);
+}
+
+// Cordova Device Ready
+document.addEventListener("deviceready", function () {
+    fetchIncidents();
+    getCurrentLocation();
+}, false);
+
+function displayIncidents(incidents) {
+    const incidentList = document.getElementById('incident-list');
+    incidentList.innerHTML = ''; // Clear existing content
+
+    incidents.forEach(incident => {
+        const date = new Date(incident.timestamp).toLocaleDateString();
+        const time = new Date(incident.timestamp).toLocaleTimeString();
+        
+        const incidentCard = `
+            <div class="incident-card">
+                <div class="incident-title">${incident.title}</div>
+                <div class="incident-details">
+                    <p>${incident.description}</p>
+                    <span class="incident-category">${incident.category}</span>
+                    <p>Reported on: ${date} at ${time}</p>
+                </div>
+            </div>
+        `;
+        incidentList.innerHTML += incidentCard;
+    });
+}
+// Remove this line from the bottom of the file
+// console.log("Initial Auth status:", window.auth.currentUser ? "User logged in" : "User not logged in");
+// Add this function
+function checkAuthStatus() {
+    if (window.auth) {
+        console.log("Initial Auth status:", window.auth.currentUser ? "User logged in" : "User not logged in");
+    } else {
+        console.log("Auth not initialized yet");
+    }
+}
+// Update the deviceready listener to include the auth check
+document.addEventListener('deviceready', function() {
+    console.log("Initializing Firebase...");
+    
+    const firebaseConfig = {
+        apiKey: "AIzaSyBKWE8ZJX0YlGYjGEHyV_EI_vvxZDG_ByM",
+        authDomain: "citizen-reporting-app.firebaseapp.com",
+        projectId: "citizen-reporting-app",
+        storageBucket: "citizen-reporting-app.appspot.com",
+        messagingSenderId: "654321098765",
+        appId: "1:654321098765:web:abc123def456ghi789jkl"
+    };
+    
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        window.db = firebase.firestore();
+        window.storage = firebase.storage();
+        window.auth = firebase.auth();
+        console.log("Firebase initialized successfully");
+        
+        // Add the auth status check here
+        checkAuthStatus();
+        
+        // Rest of your existing code...
+        window.auth.onAuthStateChanged(user => {
+            console.log("Auth state changed:", user ? "User logged in" : "User not logged in");
+            if (user) {
+                if (window.location.pathname.includes("login.html") || window.location.pathname.includes("register.html")) {
+                    window.location.href = "home.html";
+                }
+            } else {
+                if (window.location.pathname.includes("home.html") || window.location.pathname.includes("report.html")) {
+                    window.location.href = "index.html";
+                }
+            }
+        });
+        // Call fetchIncidents if we're on the home page
+        if (window.location.pathname.includes('home.html')) {
+            fetchIncidents();
+        }
+    } catch (error) {
+        console.error("Firebase initialization error:", error);
+    }
+}); // End of deviceready event listener
+// Remove this duplicate auth.onAuthStateChanged listener (around line 52)
+// auth.onAuthStateChanged(user => {
+//   if (user) {
+//       if (window.location.pathname.includes("index.html") || window.location.pathname.includes("register.html")) {
+//           window.location.href = "home.html";
+//       }
+//   } else {
+//       if (window.location.pathname.includes("home.html") || window.location.pathname.includes("report.html")) {
+//           window.location.href = "index.html";
+//       }
+//   }
+// });
+// Update all auth references to use window.auth
+function registerUser() {
+    const email = document.getElementById("register-email").value;
+    const password = document.getElementById("register-password").value;
+    window.auth.createUserWithEmailAndPassword(email, password)
+        .then(() => {
+            window.location.href = "home.html";
+        })
+        .catch(error => console.error("Error registering user: ", error));
+}
+
+// Update the loginUser function
+function loginUser() {
+    if (!window.auth) {
+        console.error("Auth not initialized");
+        alert("Please wait for system initialization");
+        return;
+    }
+
+    const email = document.getElementById("login-email").value;
+    const password = document.getElementById("login-password").value;
+    
+    window.auth.signInWithEmailAndPassword(email, password)
+        .then(() => {
+            window.location.href = "home.html";
+        })
+        .catch(error => {
+            console.error("Error logging in: ", error);
+            alert("Login failed: " + error.message);
+        });
+}
+
+// Update the logoutUser function
+function logoutUser() {
+    if (!window.auth) {
+        console.error("Auth not initialized");
+        window.location.href = "index.html";
+        return;
+    }
+    
+    window.auth.signOut()
+        .then(() => {
+            window.location.href = "index.html";
+        })
+        .catch(error => {
+            console.error("Error logging out: ", error);
+            window.location.href = "index.html";
+        });
+}
+// Get Current Location using Cordova Geolocation Plugin
+function getCurrentLocation() {
+    navigator.geolocation.getCurrentPosition(
+        position => {
+            document.getElementById("incident-latitude").value = position.coords.latitude;
+            document.getElementById("incident-longitude").value = position.coords.longitude;
+        },
+        error => {
+            console.error("Error getting location: ", error);
+        },
+        { enableHighAccuracy: true }
+    );
+}
+
+// Submit Incident
+function submitIncident() {
+    const title = document.getElementById("incident-title").value;
+    const description = document.getElementById("incident-description").value;
+    const category = document.getElementById("incident-category").value;
+    const latitude = document.getElementById("incident-latitude").value;
+    const longitude = document.getElementById("incident-longitude").value;
+    const imageFile = document.getElementById("incident-image").files[0];
+    
+    const user = window.auth.currentUser;
+    if (!user) {
+        alert("Please log in to submit an incident.");
+        return;
+    }
+    
+    if (!title || !description || !category || !latitude || !longitude || !imageFile) {
+        alert("Please fill in all fields and upload an image.");
+        return;
+    }
+
+    const incidentRef = db.collection("incidents").doc();
+    
+    let uploadTask = storage.ref(`images/${incidentRef.id}`).put(imageFile);
+    uploadTask.then(snapshot => snapshot.ref.getDownloadURL())
+        .then(imageURL => {
+            const incidentData = {
+                userId: user.uid,
+                title,
+                description,
+                category,
+                latitude,
+                longitude,
+                imageURL,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                id: incidentRef.id
+            };
+    
+            // Save to both Firebase and JSONbin
+            return Promise.all([
+                // Save to Firebase
+                incidentRef.set(incidentData),
+                // Update JSONbin
+                fetch(JSONBIN_URL, {
+                    method: 'GET',
+                    headers: {
+                        'X-Master-Key': JSONBIN_SECRET
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to fetch from JSONbin');
+                    return response.json();
+                })
+                .then(data => {
+                    const incidents = Array.isArray(data.record) ? data.record : [];
+                    const jsonbinIncident = {
+                        ...incidentData,
+                        timestamp: new Date().toISOString()
+                    };
+                    incidents.push(jsonbinIncident);
+                    
+                    return fetch(JSONBIN_URL, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Master-Key': JSONBIN_SECRET
+                        },
+                        body: JSON.stringify(incidents)
+                    });
+                })
+            ]);
+        })
+        .then(() => {
+            alert("Incident submitted successfully!");
+            window.location.href = "home.html";
+        })
+        .catch(error => {
+            console.error("Error adding incident: ", error);
+            alert("Failed to submit incident. Please try again.");
+        });
+}
+
+// Fetch Incidents
+function fetchIncidents() {
+    // Fetch from Firebase
+    window.db.collection("incidents").orderBy("timestamp", "desc").onSnapshot(snapshot => {
+        let firebaseIncidents = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            firebaseIncidents.push({
+                ...data,
+                id: doc.id,
+                timestamp: data.timestamp ? data.timestamp.toDate() : new Date()
+            });
+        });
+        
+        // Fetch from JSONbin
+        fetch(JSONBIN_URL, {
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_SECRET
+            }
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch from JSONbin');
+            return response.json();
+        })
+        .then(data => {
+            const jsonbinIncidents = Array.isArray(data.record) ? data.record : [];
+            // Sort JSONbin incidents by timestamp
+            jsonbinIncidents.sort((a, b) => 
+                new Date(b.timestamp) - new Date(a.timestamp)
+            );
+            displayIncidents(firebaseIncidents, jsonbinIncidents);
+        })
+        .catch(error => {
+            console.error("Error fetching JSONbin data: ", error);
+            // Still display Firebase incidents if JSONbin fails
+            displayIncidents(firebaseIncidents, []);
+        });
+    }, error => {
+        console.error("Error fetching Firebase data: ", error);
+        // Try to fetch from JSONbin as fallback
+        fetch(JSONBIN_URL, {
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_SECRET
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            const jsonbinIncidents = Array.isArray(data.record) ? data.record : [];
+            displayIncidents([], jsonbinIncidents);
+        })
+        .catch(error => {
+            console.error("Error fetching JSONbin data: ", error);
+            displayIncidents([], []);
+        });
+    });
+}
+
+// Display Incidents
+function displayIncidents(firebaseIncidents, jsonbinIncidents) {
+    const incidentList = document.getElementById("incident-list");
+    if (!incidentList) return;
+    
+    incidentList.innerHTML = "";
+
+    // Display Firebase incidents
+    firebaseIncidents.forEach(incident => {
+        let div = document.createElement("div");
+        div.innerHTML = `
+            <h3>${incident.title}</h3>
+            <p>${incident.description}</p>
+            <p>Category: ${incident.category}</p>
+            <img src="${incident.imageURL}" width="200" />
+            <p>Location: ${incident.latitude}, ${incident.longitude}</p>
+        `;
+        incidentList.appendChild(div);
+    });
+
+    // Display JSONbin incidents
+    const jsonbinSection = document.createElement("div");
+    jsonbinSection.innerHTML = "<h2>Historical Incidents from JSONbin</h2>";
+    jsonbinIncidents.forEach(incident => {
+        let div = document.createElement("div");
+        div.innerHTML = `
+            <h3>${incident.title}</h3>
+            <p>${incident.description}</p>
+            <p>Category: ${incident.category}</p>
+            <img src="${incident.imageURL}" width="200" />
+            <p>Location: ${incident.latitude}, ${incident.longitude}</p>
+        `;
+        jsonbinSection.appendChild(div);
+    });
+    incidentList.appendChild(jsonbinSection);
+}
+
+// Cordova Device Ready
+document.addEventListener("deviceready", function () {
+    fetchIncidents();
+    getCurrentLocation();
+}, false);
+
+function displayIncidents(incidents) {
+    const incidentList = document.getElementById('incident-list');
+    incidentList.innerHTML = ''; // Clear existing content
+
+    incidents.forEach(incident => {
+        const date = new Date(incident.timestamp).toLocaleDateString();
+        const time = new Date(incident.timestamp).toLocaleTimeString();
+        
+        const incidentCard = `
+            <div class="incident-card">
+                <div class="incident-title">${incident.title}</div>
+                <div class="incident-details">
+                    <p>${incident.description}</p>
+                    <span class="incident-category">${incident.category}</span>
+                    <p>Reported on: ${date} at ${time}</p>
+                </div>
+            </div>
+        `;
+        incidentList.innerHTML += incidentCard;
+    });
+}
+// Remove this line from the bottom of the file
+// console.log("Initial Auth status:", window.auth.currentUser ? "User logged in" : "User not logged in");
+// Add this function
+function checkAuthStatus() {
+    if (window.auth) {
+        console.log("Initial Auth status:", window.auth.currentUser ? "User logged in" : "User not logged in");
+    } else {
+        console.log("Auth not initialized yet");
+    }
+}
+// Update the deviceready listener to include the auth check
+document.addEventListener('deviceready', function() {
+    console.log("Initializing Firebase...");
+    
+    const firebaseConfig = {
+        apiKey: "AIzaSyBKWE8ZJX0YlGYjGEHyV_EI_vvxZDG_ByM",
+        authDomain: "citizen-reporting-app.firebaseapp.com",
+        projectId: "citizen-reporting-app",
+        storageBucket: "citizen-reporting-app.appspot.com",
+        messagingSenderId: "654321098765",
+        appId: "1:654321098765:web:abc123def456ghi789jkl"
+    };
+    
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        window.db = firebase.firestore();
+        window.storage = firebase.storage();
+        window.auth = firebase.auth();
+        console.log("Firebase initialized successfully");
+        
+        // Add the auth status check here
+        checkAuthStatus();
+        
+        // Rest of your existing code...
+        window.auth.onAuthStateChanged(user => {
+            console.log("Auth state changed:", user ? "User logged in" : "User not logged in");
+            if (user) {
+                if (window.location.pathname.includes("login.html") || window.location.pathname.includes("register.html")) {
+                    window.location.href = "home.html";
+                }
+            } else {
+                if (window.location.pathname.includes("home.html") || window.location.pathname.includes("report.html")) {
+                    window.location.href = "index.html";
+                }
+            }
+        });
+        // Call fetchIncidents if we're on the home page
+        if (window.location.pathname.includes('home.html')) {
+            fetchIncidents();
+        }
+    } catch (error) {
+        console.error("Firebase initialization error:", error);
+    }
+}); // End of deviceready event listener
+// Remove this duplicate auth.onAuthStateChanged listener (around line 52)
+// auth.onAuthStateChanged(user => {
+//   if (user) {
+//       if (window.location.pathname.includes("index.html") || window.location.pathname.includes("register.html")) {
+//           window.location.href = "home.html";
+//       }
+//   } else {
+//       if (window.location.pathname.includes("home.html") || window.location.pathname.includes("report.html")) {
+//           window.location.href = "index.html";
+//       }
+//   }
+// });
+// Update all auth references to use window.auth
+function registerUser() {
+    const email = document.getElementById("register-email").value;
+    const password = document.getElementById("register-password").value;
+    window.auth.createUserWithEmailAndPassword(email, password)
+        .then(() => {
+            window.location.href = "home.html";
+        })
+        .catch(error => console.error("Error registering user: ", error));
+}
+
+// Update the loginUser function
+function loginUser() {
+    if (!window.auth) {
+        console.error("Auth not initialized");
+        alert("Please wait for system initialization");
+        return;
+    }
+
+    const email = document.getElementById("login-email").value;
+    const password = document.getElementById("login-password").value;
+    
+    window.auth.signInWithEmailAndPassword(email, password)
+        .then(() => {
+            window.location.href = "home.html";
+        })
+        .catch(error => {
+            console.error("Error logging in: ", error);
+            alert("Login failed: " + error.message);
+        });
+}
+
+// Update the logoutUser function
+function logoutUser() {
+    if (!window.auth) {
+        console.error("Auth not initialized");
+        window.location.href = "index.html";
+        return;
+    }
+    
+    window.auth.signOut()
+        .then(() => {
+            window.location.href = "index.html";
+        })
+        .catch(error => {
+            console.error("Error logging out: ", error);
+            window.location.href = "index.html";
+        });
+}
+// Get Current Location using Cordova Geolocation Plugin
+function getCurrentLocation() {
+    navigator.geolocation.getCurrentPosition(
+        position => {
+            document.getElementById("incident-latitude").value = position.coords.latitude;
+            document.getElementById("incident-longitude").value = position.coords.longitude;
+        },
+        error => {
+            console.error("Error getting location: ", error);
+        },
+        { enableHighAccuracy: true }
+    );
+}
+
+// Submit Incident
+function submitIncident() {
+    const title = document.getElementById("incident-title").value;
+    const description = document.getElementById("incident-description").value;
+    const category = document.getElementById("incident-category").value;
+    const latitude = document.getElementById("incident-latitude").value;
+    const longitude = document.getElementById("incident-longitude").value;
+    const imageFile = document.getElementById("incident-image").files[0];
+    
+    const user = window.auth.currentUser;
+    if (!user) {
+        alert("Please log in to submit an incident.");
+        return;
+    }
+    
+    if (!title || !description || !category || !latitude || !longitude || !imageFile) {
+        alert("Please fill in all fields and upload an image.");
+        return;
+    }
+
+    const incidentRef = db.collection("incidents").doc();
+    
+    let uploadTask = storage.ref(`images/${incidentRef.id}`).put(imageFile);
+    uploadTask.then(snapshot => snapshot.ref.getDownloadURL())
+        .then(imageURL => {
+            const incidentData = {
+                userId: user.uid,
+                title,
+                description,
+                category,
+                latitude,
+                longitude,
+                imageURL,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                id: incidentRef.id
+            };
+    
+            // Save to both Firebase and JSONbin
+            return Promise.all([
+                // Save to Firebase
+                incidentRef.set(incidentData),
+                // Update JSONbin
+                fetch(JSONBIN_URL, {
+                    method: 'GET',
+                    headers: {
+                        'X-Master-Key': JSONBIN_SECRET
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to fetch from JSONbin');
+                    return response.json();
+                })
+                .then(data => {
+                    const incidents = Array.isArray(data.record) ? data.record : [];
+                    const jsonbinIncident = {
+                        ...incidentData,
+                        timestamp: new Date().toISOString()
+                    };
+                    incidents.push(jsonbinIncident);
+                    
+                    return fetch(JSONBIN_URL, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Master-Key': JSONBIN_SECRET
+                        },
+                        body: JSON.stringify(incidents)
+                    });
+                })
+            ]);
+        })
+        .then(() => {
+            alert("Incident submitted successfully!");
+            window.location.href = "home.html";
+        })
+        .catch(error => {
+            console.error("Error adding incident: ", error);
+            alert("Failed to submit incident. Please try again.");
+        });
+}
+
+// Fetch Incidents
+function fetchIncidents() {
+    // Fetch from Firebase
+    window.db.collection("incidents").orderBy("timestamp", "desc").onSnapshot(snapshot => {
+        let firebaseIncidents = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            firebaseIncidents.push({
+                ...data,
+                id: doc.id,
+                timestamp: data.timestamp ? data.timestamp.toDate() : new Date()
+            });
+        });
+        
+        // Fetch from JSONbin
+        fetch(JSONBIN_URL, {
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_SECRET
+            }
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch from JSONbin');
+            return response.json();
+        })
+        .then(data => {
+            const jsonbinIncidents = Array.isArray(data.record) ? data.record : [];
+            // Sort JSONbin incidents by timestamp
+            jsonbinIncidents.sort((a, b) => 
+                new Date(b.timestamp) - new Date(a.timestamp)
+            );
+            displayIncidents(firebaseIncidents, jsonbinIncidents);
+        })
+        .catch(error => {
+            console.error("Error fetching JSONbin data: ", error);
+            // Still display Firebase incidents if JSONbin fails
+            displayIncidents(firebaseIncidents, []);
+        });
+    }, error => {
+        console.error("Error fetching Firebase data: ", error);
+        // Try to fetch from JSONbin as fallback
+        fetch(JSONBIN_URL, {
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_SECRET
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            const jsonbinIncidents = Array.isArray(data.record) ? data.record : [];
+            displayIncidents([], jsonbinIncidents);
+        })
+        .catch(error => {
+            console.error("Error fetching JSONbin data: ", error);
+            displayIncidents([], []);
+        });
+    });
+}
+
+// Display Incidents
+function displayIncidents(firebaseIncidents, jsonbinIncidents) {
+    const incidentList = document.getElementById("incident-list");
+    if (!incidentList) return;
+    
+    incidentList.innerHTML = "";
+
+    // Display Firebase incidents
+    firebaseIncidents.forEach(incident => {
+        let div = document.createElement("div");
+        div.innerHTML = `
+            <h3>${incident.title}</h3>
+            <p>${incident.description}</p>
+            <p>Category: ${incident.category}</p>
+            <img src="${incident.imageURL}" width="200" />
+            <p>Location: ${incident.latitude}, ${incident.longitude}</p>
+        `;
+        incidentList.appendChild(div);
+    });
+
+    // Display JSONbin incidents
+    const jsonbinSection = document.createElement("div");
+    jsonbinSection.innerHTML = "<h2>Historical Incidents from JSONbin</h2>";
+    jsonbinIncidents.forEach(incident => {
+        let div = document.createElement("div");
+        div.innerHTML = `
+            <h3>${incident.title}</h3>
+            <p>${incident.description}</p>
+            <p>Category: ${incident.category}</p>
+            <img src="${incident.imageURL}" width="200" />
+            <p>Location: ${incident.latitude}, ${incident.longitude}</p>
+        `;
+        jsonbinSection.appendChild(div);
+    });
+    incidentList.appendChild(jsonbinSection);
+}
+
+// Cordova Device Ready
+document.addEventListener("deviceready", function () {
+    fetchIncidents();
+    getCurrentLocation();
+}, false);
+
+function displayIncidents(incidents) {
+    const incidentList = document.getElementById('incident-list');
+    incidentList.innerHTML = ''; // Clear existing content
+
+    incidents.forEach(incident => {
+        const date = new Date(incident.timestamp).toLocaleDateString();
+        const time = new Date(incident.timestamp).toLocaleTimeString();
+        
+        const incidentCard = `
+            <div class="incident-card">
+                <div class="incident-title">${incident.title}</div>
+                <div class="incident-details">
+                    <p>${incident.description}</p>
+                    <span class="incident-category">${incident.category}</span>
+                    <p>Reported on: ${date} at ${time}</p>
+                </div>
+            </div>
+        `;
+        incidentList.innerHTML += incidentCard;
+    });
+}
+// Remove this line from the bottom of the file
+// console.log("Initial Auth status:", window.auth.currentUser ? "User logged in" : "User not logged in");
+// Add this function
+function checkAuthStatus() {
+    if (window.auth) {
+        console.log("Initial Auth status:", window.auth.currentUser ? "User logged in" : "User not logged in");
+    } else {
+        console.log("Auth not initialized yet");
+    }
+}
+// Update the deviceready listener to include the auth check
+document.addEventListener('deviceready', function() {
+    console.log("Initializing Firebase...");
+    
+    const firebaseConfig = {
+        apiKey: "AIzaSyBKWE8ZJX0YlGYjGEHyV_EI_vvxZDG_ByM",
+        authDomain: "citizen-reporting-app.firebaseapp.com",
+        projectId: "citizen-reporting-app",
+        storageBucket: "citizen-reporting-app.appspot.com",
+        messagingSenderId: "654321098765",
+        appId: "1:654321098765:web:abc123def456ghi789jkl"
+    };
+    
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        window.db = firebase.firestore();
+        window.storage = firebase.storage();
+        window.auth = firebase.auth();
+        console.log("Firebase initialized successfully");
+        
+        // Add the auth status check here
+        checkAuthStatus();
+        
+        // Rest of your existing code...
+        window.auth.onAuthStateChanged(user => {
+            console.log("Auth state changed:", user ? "User logged in" : "User not logged in");
+            if (user) {
+                if (window.location.pathname.includes("login.html") || window.location.pathname.includes("register.html")) {
+                    window.location.href = "home.html";
+                }
+            } else {
+                if (window.location.pathname.includes("home.html") || window.location.pathname.includes("report.html")) {
+                    window.location.href = "index.html";
+                }
+            }
+        });
+        // Call fetchIncidents if we're on the home page
+        if (window.location.pathname.includes('home.html')) {
+            fetchIncidents();
+        }
+    } catch (error) {
+        console.error("Firebase initialization error:", error);
+    }
+}); // End of deviceready event listener
+// Remove this duplicate auth.onAuthStateChanged listener (around line 52)
+// auth.onAuthStateChanged(user => {
+//   if (user) {
+//       if (window.location.pathname.includes("index.html") || window.location.pathname.includes("register.html")) {
+//           window.location.href = "home.html";
+//       }
+//   } else {
+//       if (window.location.pathname.includes("home.html") || window.location.pathname.includes("report.html")) {
+//           window.location.href = "index.html";
+//       }
+//   }
+// });
+// Update all auth references to use window.auth
+function registerUser() {
+    const email = document.getElementById("register-email").value;
+    const password = document.getElementById("register-password").value;
+    window.auth.createUserWithEmailAndPassword(email, password)
+        .then(() => {
+            window.location.href = "home.html";
+        })
+        .catch(error => console.error("Error registering user: ", error));
+}
+
+// Update the loginUser function
+function loginUser() {
+    if (!window.auth) {
+        console.error("Auth not initialized");
+        alert("Please wait for system initialization");
+        return;
+    }
+
+    const email = document.getElementById("login-email").value;
+    const password = document.getElementById("login-password").value;
+    
+    window.auth.signInWithEmailAndPassword(email, password)
+        .then(() => {
+            window.location.href = "home.html";
+        })
+        .catch(error => {
+            console.error("Error logging in: ", error);
+            alert("Login failed: " + error.message);
+        });
+}
+
+// Update the logoutUser function
+function logoutUser() {
+    if (!window.auth) {
+        console.error("Auth not initialized");
+        window.location.href = "index.html";
+        return;
+    }
+    
+    window.auth.signOut()
+        .then(() => {
+            window.location.href = "index.html";
+        })
+        .catch(error => {
+            console.error("Error logging out: ", error);
+            window.location.href = "index.html";
+        });
+}
+// Get Current Location using Cordova Geolocation Plugin
+function getCurrentLocation() {
+    navigator.geolocation.getCurrentPosition(
+        position => {
+            document.getElementById("incident-latitude").value = position.coords.latitude;
+            document.getElementById("incident-longitude").value = position.coords.longitude;
+        },
+        error => {
+            console.error("Error getting location: ", error);
+        },
+        { enableHighAccuracy: true }
+    );
+}
+
+// Submit Incident
+function submitIncident() {
+    const title = document.getElementById("incident-title").value;
+    const description = document.getElementById("incident-description").value;
+    const category = document.getElementById("incident-category").value;
+    const latitude = document.getElementById("incident-latitude").value;
+    const longitude = document.getElementById("incident-longitude").value;
+    const imageFile = document.getElementById("incident-image").files[0];
+    
+    const user = window.auth.currentUser;
+    if (!user) {
+        alert("Please log in to submit an incident.");
+        return;
+    }
+    
+    if (!title || !description || !category || !latitude || !longitude || !imageFile) {
+        alert("Please fill in all fields and upload an image.");
+        return;
+    }
+
+    const incidentRef = db.collection("incidents").doc();
+    
+    let uploadTask = storage.ref(`images/${incidentRef.id}`).put(imageFile);
+    uploadTask.then(snapshot => snapshot.ref.getDownloadURL())
+        .then(imageURL => {
+            const incidentData = {
+                userId: user.uid,
+                title,
+                description,
+                category,
+                latitude,
+                longitude,
+                imageURL,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                id: incidentRef.id
+            };
+    
+            // Save to both Firebase and JSONbin
+            return Promise.all([
+                // Save to Firebase
+                incidentRef.set(incidentData),
+                // Update JSONbin
+                fetch(JSONBIN_URL, {
+                    method: 'GET',
+                    headers: {
+                        'X-Master-Key': JSONBIN_SECRET
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to fetch from JSONbin');
+                    return response.json();
+                })
+                .then(data => {
+                    const incidents = Array.isArray(data.record) ? data.record : [];
+                    const jsonbinIncident = {
+                        ...incidentData,
+                        timestamp: new Date().toISOString()
+                    };
+                    incidents.push(jsonbinIncident);
+                    
+                    return fetch(JSONBIN_URL, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Master-Key': JSONBIN_SECRET
+                        },
+                        body: JSON.stringify(incidents)
+                    });
+                })
+            ]);
+        })
+        .then(() => {
+            alert("Incident submitted successfully!");
+            window.location.href = "home.html";
+        })
+        .catch(error => {
+            console.error("Error adding incident: ", error);
+            alert("Failed to submit incident. Please try again.");
+        });
+}
+
+// Fetch Incidents
+function fetchIncidents() {
+    // Fetch from Firebase
+    window.db.collection("incidents").orderBy("timestamp", "desc").onSnapshot(snapshot => {
+        let firebaseIncidents = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            firebaseIncidents.push({
+                ...data,
+                id: doc.id,
+                timestamp: data.timestamp ? data.timestamp.toDate() : new Date()
+            });
+        });
+        
+        // Fetch from JSONbin
+        fetch(JSONBIN_URL, {
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_SECRET
+            }
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch from JSONbin');
+            return response.json();
+        })
+        .then(data => {
+            const jsonbinIncidents = Array.isArray(data.record) ? data.record : [];
+            // Sort JSONbin incidents by timestamp
+            jsonbinIncidents.sort((a, b) => 
+                new Date(b.timestamp) - new Date(a.timestamp)
+            );
+            displayIncidents(firebaseIncidents, jsonbinIncidents);
+        })
+        .catch(error => {
+            console.error("Error fetching JSONbin data: ", error);
+            // Still display Firebase incidents if JSONbin fails
+            displayIncidents(firebaseIncidents, []);
+        });
+    }, error => {
+        console.error("Error fetching Firebase data: ", error);
+        // Try to fetch from JSONbin as fallback
+        fetch(JSONBIN_URL, {
+            method: 'GET',
+            headers: {
+                'X-Master-Key': JSONBIN_SECRET
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            const jsonbinIncidents = Array.isArray(data.record) ? data.record : [];
+            displayIncidents([], jsonbinIncidents);
+        })
+        .catch(error => {
+            console.error("Error fetching JSONbin data: ", error);
+            displayIncidents([], []);
+        });
+    });
+}
+
+// Display Incidents
+function displayIncidents(firebaseIncidents, jsonbinIncidents) {
+    const incidentList = document.getElementById("incident-list");
+    if (!incidentList) return;
+    
+    incidentList.innerHTML = "";
+
+    // Display Firebase incidents
+    firebaseIncidents.forEach(incident => {
+        let div = document.createElement("div");
+        div.innerHTML = `
+            <h3>${incident.title}</h3>
+            <p>${incident.description}</p>
+            <p>Category: ${incident.category}</p>
+            <img src="${incident.imageURL}" width="200" />
+            <p>Location: ${incident.latitude}, ${incident.longitude}</p>
+        `;
+        incidentList.appendChild(div);
+    });
+
+    // Display JSONbin incidents
+    const jsonbinSection = document.createElement("div");
+    jsonbinSection.innerHTML = "<h2>Historical Incidents from JSONbin</h2>";
+    jsonbinIncidents.forEach(incident => {
+        let div = document.createElement("div");
+        div.innerHTML = `
+            <h3>${incident.title}</h3>
+            <p>${incident.description}</p>
+            <p>Category: ${incident.category}</p>
+            <img src="${incident.imageURL}" width="200" />
+            <p>Location: ${incident.latitude}, ${incident.longitude}</p>
+        `;
+        jsonbinSection.appendChild(div);
+    });
+    incidentList.appendChild(jsonbinSection);
+}
+
+// Cordova Device Ready
+document.addEventListener("deviceready", function () {
+    fetchIncidents();
+    getCurrentLocation();
+}, false);
+
+function displayIncidents(incidents) {
+    const incidentList = document.getElementById('incident-list');
+    incidentList.innerHTML = ''; // Clear existing content
+
+    incidents.forEach(incident => {
+        const date = new Date(incident.timestamp).toLocaleDateString();
+        const time = new Date(incident.timestamp).toLocaleTimeString();
+        
+        const incidentCard = `
+            <div class="incident-card">
+                <div class="incident-title">${incident.title}</div>
+                <div class="incident-details">
+                    <p>${incident.description}</p>
+                    <span class="incident-category">${incident.category}</span>
+                    <p>Reported on: ${date} at ${time}</p>
+                </div>
+            </div>
+        `;
+        incidentList.innerHTML += incidentCard;
+    });
+}
+  
