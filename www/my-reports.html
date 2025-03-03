@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Reports - Citizens Reporting App</title>
+    <link rel="stylesheet" href="css/index.css">
+    <style>
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .incident-card {
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            background-color: #fff;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .incident-actions {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        .edit-btn {
+            background-color: #f39c12;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .delete-btn {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .back-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        .incident-image {
+            width: 200px;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <button class="back-btn" onclick="window.location.href='home.html'">Back to Home</button>
+        <h2>My Reported Incidents</h2>
+        
+        <!-- Add filter section -->
+        <div class="filter-section">
+            <select id="category-filter" onchange="filterIncidents()">
+                <option value="all">All Categories</option>
+                <option value="Accident">Accident</option>
+                <option value="Fighting">Fighting</option>
+                <option value="Rioting">Rioting</option>
+            </select>
+        </div>
+
+        <div id="my-incidents">
+            <!-- User's incidents will be dynamically loaded here -->
+        </div>
+    </div>
+
+    <style>
+        /* Add these styles to your existing styles */
+        .filter-section {
+            margin: 20px 0;
+        }
+
+        #category-filter {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            background-color: white;
+            min-width: 200px;
+            cursor: pointer;
+        }
+
+        #category-filter:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+    </style>
+    <!-- Update the script section -->
+        <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+        <script src="js/my-reports.js"></script>
+    </body>
+    </html>

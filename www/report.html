@@ -28,17 +28,12 @@
             <option value="Accident">Accident</option>
             <option value="Fighting">Fighting</option>
             <option value="Rioting">Rioting</option>
+            <option value="Others">Others</option>
         </select>
         
-        <!-- Add map container -->
+        <!-- Keep only this location input -->
+        <input type="text" id="location-address" placeholder="Location will be automatically detected..." readonly>
         <div id="map"></div>
-        <button onclick="getCurrentLocation()">Get Current Location</button>
-        
-        <!-- Hide original location fields but keep them for data -->
-        <div class="location-fields">
-            <input type="text" id="incident-latitude" placeholder="Latitude" readonly>
-            <input type="text" id="incident-longitude" placeholder="Longitude" readonly>
-        </div>
         
         <input type="file" id="incident-image">
         <button onclick="submitIncident()">Submit Incident</button>

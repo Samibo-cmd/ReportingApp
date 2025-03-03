@@ -66,15 +66,11 @@ window.submitIncident = async function() {
     const title = document.getElementById('incident-title').value;
     const description = document.getElementById('incident-description').value;
     const category = document.getElementById('incident-category').value;
-    const latitude = document.getElementById('incident-latitude').value;
-    const longitude = document.getElementById('incident-longitude').value;
     const imageFile = document.getElementById('incident-image').files[0];
     console.log('Form values:', {
         title,
         description,
         category,
-        latitude,
-        longitude,
         hasImage: !!imageFile
     });
     if (!title || !description || !category) {
@@ -102,12 +98,10 @@ window.submitIncident = async function() {
             title,
             description,
             category,
-            latitude: parseFloat(latitude) || null,
-            longitude: parseFloat(longitude) || null,
-            address: document.getElementById('location-address').value, // Add address
+            address: document.getElementById('location-address').value,
             imageURL: imageData,
             timestamp: new Date().toISOString(),
-            userId: window.auth?.currentUser?.uid || 'anonymous'
+            userId: firebase.auth().currentUser.uid
         };
         currentIncidents.push(newIncident);
         const updateResponse = await fetch(JSONBIN_URL, {
@@ -164,7 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Add map initialization function
 // Add address input field to store location name
 let locationInput;
-
+// Add this to your map initialization
 function initMap() {
     map = L.map('map').setView([9.0820, 8.6753], 6);
     
@@ -173,22 +167,59 @@ function initMap() {
         attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
-    // Initialize location input
-    locationInput = document.createElement('input');
-    locationInput.type = 'text';
-    locationInput.id = 'location-address';
-    locationInput.placeholder = 'Location address will appear here';
-    locationInput.readOnly = true;
-    
-    // Insert address input before the map
-    const mapElement = document.getElementById('map');
-    mapElement.parentNode.insertBefore(locationInput, mapElement);
+    // Get user's location automatically when the map loads
+    if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(function(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            updateLocationFromClick(lat, lng);
+            map.setView([lat, lng], 15);
+        });
+    }
 
+    // Allow clicking on map to update location
     map.on('click', function(e) {
-        updateLocation(e.latlng.lat, e.latlng.lng);
+        updateLocationFromClick(e.latlng.lat, e.latlng.lng);
     });
 }
 
+// Remove the duplicate closing brace and map.on('click') call
+async function updateLocationFromClick(lat, lng) {
+    if (marker) {
+        marker.setLatLng([lat, lng]);
+    } else {
+        marker = L.marker([lat, lng]).addTo(map);
+    }
+
+    try {
+        const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?` +
+            `format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+            {
+                headers: {
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'User-Agent': 'CitizenReportingApp'
+                }
+            }
+        );
+        const data = await response.json();
+        
+        const addressParts = [];
+        if (data.address) {
+            if (data.address.road) addressParts.push(data.address.road);
+            if (data.address.suburb) addressParts.push(data.address.suburb);
+            if (data.address.city || data.address.town) addressParts.push(data.address.city || data.address.town);
+            if (data.address.state) addressParts.push(data.address.state);
+            if (data.address.country) addressParts.push(data.address.country);
+        }
+        
+        const formattedAddress = addressParts.join(', ') || data.display_name;
+        document.getElementById('location-address').value = formattedAddress;
+    } catch (error) {
+        console.error('Error fetching address:', error);
+        document.getElementById('location-address').value = 'Address lookup failed';
+    }
+}
 // Update getCurrentLocation function to include address lookup
 window.getCurrentLocation = function() {
     if ("geolocation" in navigator) {
@@ -207,7 +238,6 @@ window.getCurrentLocation = function() {
         alert("Geolocation is not supported by your browser");
     }
 };
-
 // Update location function to include reverse geocoding
 async function updateLocation(lat, lng) {
     document.getElementById('incident-latitude').value = lat;
@@ -332,20 +362,29 @@ try {
 } catch (error) {
     console.error("Firebase initialization error:", error);
 }
-
+// Remove the duplicate loginUser function and fix the syntax
 window.loginUser = async function() {
     const email = document.getElementById("login-email").value;
     const password = document.getElementById("login-password").value;
 
     try {
-        await window.auth.signInWithEmailAndPassword(email, password);
+        const userCredential = await window.auth.signInWithEmailAndPassword(email, password);
         console.log("Login successful");
-        window.location.href = "home.html";
+        const redirectUrl = sessionStorage.getItem('redirectUrl');
+        if (redirectUrl) {
+            sessionStorage.removeItem('redirectUrl');
+            window.location.href = redirectUrl;
+        } else {
+            window.location.href = 'home.html';
+        }
     } catch (error) {
         console.error("Login error:", error);
         alert("Login failed: " + error.message);
     }
 };
+
+// Remove this duplicate section that was causing the error
+// firebase.auth().signInWithEmailAndPassword(email, password)... 
 
 // Fix the logout function definition
 window.logoutUser = async function() {
