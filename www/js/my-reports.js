@@ -1,13 +1,11 @@
-// Remove the Firebase imports and initialization since we're using compat version
-// Firebase configuration
 const firebaseConfig = {
-    apiKey: "AIzaSyB5lZyuxe6pfdbnRkFhZMqZ7jqu0F8jNX8",
-    authDomain: "incidentapp-5ffa7.firebaseapp.com",
-    projectId: "incidentapp-5ffa7",
-    storageBucket: "incidentapp-5ffa7.firebasestorage.app",
-    messagingSenderId: "791326652344",
-    appId: "1:791326652344:web:4ebc3f43b96f84b873014d"
-};
+    apiKey: "AIzaSyCn9ZHemF9Wn5d9P3Pi-dJneuTD3GZQDgI",
+    authDomain: "citizens-reporting-app-26de8.firebaseapp.com",
+    projectId: "citizens-reporting-app-26de8",
+    storageBucket: "citizens-reporting-app-26de8.firebasestorage.app",
+    messagingSenderId: "42192559472",
+    appId: "1:42192559472:web:8838c524c6ed94d2e643b5"
+  };
 
 // JSONbin configuration
 const JSONBIN_URL = 'https://api.jsonbin.io/v3/b/67bf3079acd3cb34a8f14391';

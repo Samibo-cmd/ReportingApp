@@ -5,18 +5,91 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Register - Citizens Reporting App</title>
     <link rel="stylesheet" href="css/index.css">
+    <style>
+        .error-message {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            display: none;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <h2>Register</h2>
+        <!-- Add error message container -->
+        <div id="error-container" class="error-message"></div>
+        
         <input type="text" id="register-fullname" placeholder="Full Name">
         <input type="email" id="register-email" placeholder="Email">
         <input type="password" id="register-password" placeholder="Password">
-        <button onclick="registerUser()"><a href="home.html">Sign Up</a></button>
+        <button onclick="registerUser()">Sign Up</button>
         <p>Already have an account? <a href="index.html">Login</a></p>
     </div>
 
-    <script src="cordova.js"></script>
-    <script src="js/index.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    
+    <script>
+        // Initialize Firebase
+        const firebaseConfig = {
+    apiKey: "AIzaSyCn9ZHemF9Wn5d9P3Pi-dJneuTD3GZQDgI",
+    authDomain: "citizens-reporting-app-26de8.firebaseapp.com",
+    projectId: "citizens-reporting-app-26de8",
+    storageBucket: "citizens-reporting-app-26de8.firebasestorage.app",
+    messagingSenderId: "42192559472",
+    appId: "1:42192559472:web:8838c524c6ed94d2e643b5"
+  };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+
+        // Function to display error messages
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.style.display = 'block';
+            errorContainer.textContent = message;
+            
+            // Hide the message after 5 seconds
+            setTimeout(() => {
+                errorContainer.style.display = 'none';
+            }, 5000);
+        }
+
+        // Update registerUser to use the error display
+        window.registerUser = async function() {
+            const email = document.getElementById("register-email").value;
+            const password = document.getElementById("register-password").value;
+            const fullname = document.getElementById("register-fullname").value;
+
+            try {
+                const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
+                console.log("Registration successful:", userCredential);
+                window.location.href = 'home.html';
+            } catch (error) {
+                console.error("Error registering user: ", error);
+                let errorMessage = "Registration failed: ";
+                
+                switch (error.code) {
+                    case 'auth/email-already-in-use':
+                        errorMessage += "This email is already registered. Please use a different email or try logging in.";
+                        break;
+                    case 'auth/weak-password':
+                        errorMessage += "Password should be at least 6 characters long.";
+                        break;
+                    case 'auth/invalid-email':
+                        errorMessage += "Please enter a valid email address.";
+                        break;
+                    default:
+                        errorMessage += error.message;
+                }
+                
+                showError(errorMessage);
+            }
+        };
+    </script>
 </body>
 </html>
