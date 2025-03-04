@@ -1,3 +1,5 @@
+// Remove the Firebase imports and initialization since we're using compat version
+// Firebase configuration
 const firebaseConfig = {
     apiKey: "AIzaSyCn9ZHemF9Wn5d9P3Pi-dJneuTD3GZQDgI",
     authDomain: "citizens-reporting-app-26de8.firebaseapp.com",

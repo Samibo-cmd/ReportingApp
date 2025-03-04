@@ -328,6 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 window.fetchAndDisplayIncidents = fetchAndDisplayIncidents;
 
+// Your web app's Firebase configuration
 const firebaseConfig = {
     apiKey: "AIzaSyCn9ZHemF9Wn5d9P3Pi-dJneuTD3GZQDgI",
     authDomain: "citizens-reporting-app-26de8.firebaseapp.com",
